@@ -5,7 +5,7 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 import statsmodels.api as sm
-from dFC_graph import coupling
+#from dFC_graph import coupling
 from matplotlib import colors
 import pickle as pickle
 
@@ -98,41 +98,46 @@ def fit_linear_model(y,x):
 
 
 
-def run_reg_model(subject, condition, window, single = True):
+def run_reg_model(subject, condition, window, single = True, smooth=False):
 	
-	fn = Data + '%s_FIR_%s_FFA.ts' %(subject, condition)
+	fn = TDSigEI_TS + '%s_FIR_%s_FFA.ts' %(subject, condition)
 	ffa_ts = np.loadtxt(fn)
 	
-	fn = Data + '%s_FIR_%s_PPA.ts' %(subject, condition)
+	fn = TDSigEI_TS + '%s_FIR_%s_PPA.ts' %(subject, condition)
 	ppa_ts = np.loadtxt(fn)
 	
-	fn = Data + '%s_FIR_%s_VC.ts' %(subject, condition)
+	fn = TDSigEI_TS + '%s_FIR_%s_VC.ts' %(subject, condition)
 	vc_ts = np.loadtxt(fn)
 	
-	fn = Data + '%s_FIR_%s_THA.ts' %(subject, condition)
+	fn = TDSigEI_TS + '%s_FIR_%s_THA.ts' %(subject, condition)
 	tha_ts = np.loadtxt(fn)		
+
+	if smooth:
+		tha_ts = pd.rolling_mean(tha_ts, window)
+		tha_ts[np.isnan(tha_ts)] = 0
 
 	ffa_ts, ppa_ts, vc_ts, tha_ts = censor_ts(ffa_ts, ppa_ts, vc_ts, tha_ts)
 
 	ffa_vc_mtd = get_MTD(ffa_ts, vc_ts, window)
 	ppa_vc_mtd = get_MTD(ppa_ts, vc_ts, window)
 
+	
 	ffa_e = fit_linear_model(ffa_vc_mtd, tha_ts)
 	ppa_e = fit_linear_model(ppa_vc_mtd, tha_ts)
 
 	if single:
 		ffa_e=np.zeros(15)
-		ppa_e=np.zeros(15)
+		ppa_e=np.zeros(15) #np.zeros(15)
 		for i in range(15):
-			e = fit_linear_model(ffa_vc_mtd, tha_ts[:,i])
-			ffa_e[i] = e.tvalues[1]
-			e = fit_linear_model(ppa_vc_mtd, tha_ts[:,i])
-			ppa_e[i] = e.tvalues[1]
+			e = fit_linear_model(tha_ts[:,i], ffa_vc_mtd)
+			ffa_e[i] = e.params[1] #e#.tvalues[1]
+			e = fit_linear_model(tha_ts[:,i], ppa_vc_mtd)
+			ppa_e[i] = e.params[1] #e#.tvalues[1]
 
 	return ffa_e, ppa_e
 
 
-def loop_regressions(Subjects, Conditions, window):
+def loop_regressions(Subjects, Conditions, window, dset = 'TDSigEI'):
 
 	Nuclei = ['AN','VM', 'VL', 'MGN', 'MD', 'PuA', 'LP', 'IL', 'VA', 'Po', 'LGN', 'PuM', 'PuI', 'PuL', 'VP']
 	df = pd.DataFrame(columns=('Subject', 'Thalamic Nuclei', 'Condition', 'FFA-VC', 'PPA-VC'), dtype=float) 
@@ -141,20 +146,29 @@ def loop_regressions(Subjects, Conditions, window):
 
 		sdf =  pd.DataFrame(columns=('Subject', 'Thalamic Nuclei', 'Condition', 'FFA-VC', 'PPA-VC'), dtype=float)  
 
-		i=0
+		
+		ffa_e={}
+		ppa_e={}
 		for condition in Conditions:
-			ffa_e, ppa_e= run_reg_model(subject, condition, window)
+			ffa_e[condition], ppa_e[condition]= run_reg_model(subject, condition, window)
+		i=0	
+		for ii, n in enumerate(Nuclei):
+			sdf.loc[i, 'Subject'] = subject
+			sdf.loc[i, 'Thalamic Nuclei'] = n
+			#sdf.loc[i, 'Condition'] = condition
+			
+			if dset == 'TDSigEI':
+				sdf.loc[i, 'T-P'] = ffa_e['FH'][ii] - ffa_e['Fp'][ii] + ppa_e['HF'][ii] - ppa_e['Hp'][ii]#.[ii+1]
+				sdf.loc[i, 'D-P'] = ffa_e['HF'][ii] - ffa_e['Fp'][ii] + ppa_e['FH'][ii] - ppa_e['Hp'][ii]
+			
+			if dset == 'TRSE':
+				sdf.loc[i, 'T-P'] = ffa_e['FH'][ii] - ffa_e['CAT'][ii] + ppa_e['HF'][ii] - ppa_e['CAT'][ii]#.[ii+1]
+				sdf.loc[i, 'D-P'] = ffa_e['HF'][ii] - ffa_e['CAT'][ii] + ppa_e['FH'][ii] - ppa_e['CAT'][ii]
 
-			for ii, n in enumerate(Nuclei):
-				sdf.loc[i, 'Subject'] = subject
-				sdf.loc[i, 'Thalamic Nuclei'] = n
-				sdf.loc[i, 'Condition'] = condition
-				sdf.loc[i, 'FFA-VC'] = ffa_e[ii]
-				sdf.loc[i, 'PPA-VC'] = ppa_e[ii]
-				i=i+1
+			i=i+1
 		df = pd.concat([df, sdf])	
 	
-	return df		
+	return df	
 
 
 if __name__ == "__main__":
@@ -167,10 +181,10 @@ if __name__ == "__main__":
 
 
 	#TRSE
-	Subjects = np.loadtxt(Data+'TRSE_subject', dtype=int)
-	Conditions =['FH','HF', 'CAT', 'BO']
-	window = 15
-	TR_df = loop_regressions(Subjects, Conditions, window)
+	# Subjects = np.loadtxt(Data+'TRSE_subject', dtype=int)
+	# Conditions =['FH','HF', 'CAT', 'BO']
+	# window = 15
+	# TR_df = loop_regressions(Subjects, Conditions, window)
 
 
 
