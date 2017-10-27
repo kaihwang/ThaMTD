@@ -100,16 +100,16 @@ def fit_linear_model(y,x):
 
 def run_reg_model(subject, condition, window, single = True, smooth=False):
 	
-	fn = TDSigEI_TS + '%s_FIR_%s_FFA.ts' %(subject, condition)
+	fn = Data + '%s_FIR_%s_FFA.ts' %(subject, condition)
 	ffa_ts = np.loadtxt(fn)
 	
-	fn = TDSigEI_TS + '%s_FIR_%s_PPA.ts' %(subject, condition)
+	fn = Data + '%s_FIR_%s_PPA.ts' %(subject, condition)
 	ppa_ts = np.loadtxt(fn)
 	
-	fn = TDSigEI_TS + '%s_FIR_%s_VC.ts' %(subject, condition)
+	fn = Data + '%s_FIR_%s_VC.ts' %(subject, condition)
 	vc_ts = np.loadtxt(fn)
 	
-	fn = TDSigEI_TS + '%s_FIR_%s_THA.ts' %(subject, condition)
+	fn = Data + '%s_FIR_%s_THA.ts' %(subject, condition)
 	tha_ts = np.loadtxt(fn)		
 
 	if smooth:
@@ -129,9 +129,9 @@ def run_reg_model(subject, condition, window, single = True, smooth=False):
 		ffa_e=np.zeros(15)
 		ppa_e=np.zeros(15) #np.zeros(15)
 		for i in range(15):
-			e = fit_linear_model(tha_ts[:,i], ffa_vc_mtd)
+			e = fit_linear_model(ffa_vc_mtd, tha_ts[:,i])
 			ffa_e[i] = e.params[1] #e#.tvalues[1]
-			e = fit_linear_model(tha_ts[:,i], ppa_vc_mtd)
+			e = fit_linear_model(ppa_vc_mtd, tha_ts[:,i])
 			ppa_e[i] = e.params[1] #e#.tvalues[1]
 
 	return ffa_e, ppa_e
@@ -140,11 +140,11 @@ def run_reg_model(subject, condition, window, single = True, smooth=False):
 def loop_regressions(Subjects, Conditions, window, dset = 'TDSigEI'):
 
 	Nuclei = ['AN','VM', 'VL', 'MGN', 'MD', 'PuA', 'LP', 'IL', 'VA', 'Po', 'LGN', 'PuM', 'PuI', 'PuL', 'VP']
-	df = pd.DataFrame(columns=('Subject', 'Thalamic Nuclei', 'Condition', 'FFA-VC', 'PPA-VC'), dtype=float) 
+	df = pd.DataFrame(columns=('Subject', 'Thalamic Nuclei', 'T-P', 'D-P', 'T', 'D', 'P', 'T-D'), dtype=float) 
 
 	for subject in Subjects:
 
-		sdf =  pd.DataFrame(columns=('Subject', 'Thalamic Nuclei', 'Condition', 'FFA-VC', 'PPA-VC'), dtype=float)  
+		sdf =  pd.DataFrame(columns=('Subject', 'Thalamic Nuclei', 'T-P', 'D-P', 'T', 'D', 'P', 'T-D'), dtype=float)  
 
 		
 		ffa_e={}
@@ -160,10 +160,17 @@ def loop_regressions(Subjects, Conditions, window, dset = 'TDSigEI'):
 			if dset == 'TDSigEI':
 				sdf.loc[i, 'T-P'] = ffa_e['FH'][ii] - ffa_e['Fp'][ii] + ppa_e['HF'][ii] - ppa_e['Hp'][ii]#.[ii+1]
 				sdf.loc[i, 'D-P'] = ffa_e['HF'][ii] - ffa_e['Fp'][ii] + ppa_e['FH'][ii] - ppa_e['Hp'][ii]
-			
+				sdf.loc[i, 'T-D'] = ffa_e['FH'][ii] - ffa_e['HF'][ii] + ppa_e['HF'][ii] - ppa_e['FH'][ii]
+				sdf.loc[i, 'T'] = (ffa_e['FH'][ii] + ppa_e['HF'][ii])/2 
+				sdf.loc[i, 'D'] = (ffa_e['HF'][ii] + ppa_e['FH'][ii])/2
+				sdf.loc[i, 'P'] = (ffa_e['Fp'][ii] + ppa_e['Hp'][ii])/2
 			if dset == 'TRSE':
 				sdf.loc[i, 'T-P'] = ffa_e['FH'][ii] - ffa_e['CAT'][ii] + ppa_e['HF'][ii] - ppa_e['CAT'][ii]#.[ii+1]
 				sdf.loc[i, 'D-P'] = ffa_e['HF'][ii] - ffa_e['CAT'][ii] + ppa_e['FH'][ii] - ppa_e['CAT'][ii]
+				sdf.loc[i, 'T-D'] = ffa_e['FH'][ii] - ffa_e['HF'][ii] + ppa_e['HF'][ii] - ppa_e['FH'][ii]
+				sdf.loc[i, 'T'] = (ffa_e['FH'][ii] + ppa_e['HF'][ii])/2 
+				sdf.loc[i, 'D'] = (ffa_e['HF'][ii] + ppa_e['FH'][ii])/2
+				sdf.loc[i, 'P'] = ffa_e['CAT'][ii]
 
 			i=i+1
 		df = pd.concat([df, sdf])	
@@ -171,21 +178,37 @@ def loop_regressions(Subjects, Conditions, window, dset = 'TDSigEI'):
 	return df	
 
 
+def run_ttests(df):
+
+	tdf = pd.DataFrame(columns=('Thalamic Nuclei', 'Condition', 't', 'p'), dtype=float) 
+
+	Nuclei = ['AN','VM', 'VL', 'MGN', 'MD', 'PuA', 'LP', 'IL', 'VA', 'Po', 'LGN', 'PuM', 'PuI', 'PuL', 'VP']
+	i=0
+	for condition in ['T-P', 'D-P', 'T-D', 'T', 'D', 'P']:
+		for n in Nuclei:			
+			tdf.loc[i, 'Thalamic Nuclei'] = n
+			tdf.loc[i, 'Condition'] = condition
+			tdf.loc[i, 't'] = stats.ttest_1samp(df[df['Thalamic Nuclei']==n][condition].values,0)[0] 
+			tdf.loc[i, 'p'] = stats.ttest_1samp(df[df['Thalamic Nuclei']==n][condition].values,0)[1] 
+			i=i+1
+	return tdf		
+
+
 if __name__ == "__main__":
 
 	#TDSigEI
 	Subjects = np.loadtxt(Data+'TDSigEI_subject', dtype=int)
-	Conditions =['FH','HF', 'Fp', 'Hp', 'Fo', 'Ho']
+	Conditions =['FH','HF', 'Fp', 'Hp']
 	window = 15
-	TD_df = loop_regressions(Subjects, Conditions, window)
-
+	TD_df = loop_regressions(Subjects, Conditions, window, dset = 'TDSigEI')
+	TDt_df = run_ttests(TD_df)
 
 	#TRSE
-	# Subjects = np.loadtxt(Data+'TRSE_subject', dtype=int)
-	# Conditions =['FH','HF', 'CAT', 'BO']
-	# window = 15
-	# TR_df = loop_regressions(Subjects, Conditions, window)
-
+	Subjects = np.loadtxt(Data+'TRSE_subject', dtype=int)
+	Conditions =['FH','HF', 'CAT']
+	window = 15
+	TR_df = loop_regressions(Subjects, Conditions, window, dset = 'TRSE')
+	TRt_df = run_ttests(TR_df)
 
 
 
