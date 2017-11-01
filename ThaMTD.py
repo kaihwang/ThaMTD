@@ -82,7 +82,7 @@ def censor_ts(ffa_ts, ppa_ts, vc_ts, tha_ts, bg_ts):
 	tha_zeros = tha_ts==0	
 	bg_zeros = bg_ts==0
 
-	zeros = np.sum(tha_zeros,axis=1)+ffa_zeros+vc_zeros+ppa_zeros+bg_zeros
+	zeros = np.sum(tha_zeros,axis=1)+ffa_zeros+vc_zeros+ppa_zeros+np.sum(bg_zeros,axis=1)
 	zeros = zeros ==0
 	ffa_ts = ffa_ts[zeros]
 	ppa_ts = ppa_ts[zeros]
@@ -254,8 +254,8 @@ def test_MTD_task_modulation(Subjects, Conditions, window):
 	MTDdf = pd.DataFrame(columns=('Subject', 'Condition', 'FFA-VC', 'PPA-VC'), dtype=float)
 	for i, (subject, condition) in enumerate(itertools.product(Subjects, Conditions)):
 
-		ffa_ts, ppa_ts, vc_ts, tha_ts = load_ts(subject, condition)
-		ffa_ts, ppa_ts, vc_ts, tha_ts = censor_ts(ffa_ts, ppa_ts, vc_ts, tha_ts)
+		ffa_ts, ppa_ts, vc_ts, tha_ts, bg_ts = load_ts(subject, condition)
+		ffa_ts, ppa_ts, vc_ts, tha_ts, bg_ts = censor_ts(ffa_ts, ppa_ts, vc_ts, tha_ts, bg_ts)
 
 		MTDdf.loc[i, 'Subject'] = subject
 		MTDdf.loc[i, 'Condition'] = condition
@@ -273,8 +273,8 @@ def test_tha_task_connectivity(Subjects, Conditions, window):
 
 	Cdf = pd.DataFrame(columns=('Subject', 'Condition', 'FFA-AN', 'PPA-AN', 'VC-AN', 'FFA-MD', 'PPA-MD', 'VC-MD',  'FFA-VL', 'PPA-VL', 'VC-VL',  'FFA-Pu', 'PPA-Pu', 'VC-Pu'), dtype=float)
 	for i, (subject, condition) in enumerate(itertools.product(Subjects, Conditions)):
-		ffa_ts, ppa_ts, vc_ts, tha_ts = load_ts(subject, condition)
-		ffa_ts, ppa_ts, vc_ts, tha_ts = censor_ts(ffa_ts, ppa_ts, vc_ts, tha_ts)
+		ffa_ts, ppa_ts, vc_ts, tha_ts, bg_ts = load_ts(subject, condition)
+		ffa_ts, ppa_ts, vc_ts, tha_ts, bg_ts = censor_ts(ffa_ts, ppa_ts, vc_ts, tha_ts, bg_ts)
 
 		Cdf.loc[i, 'Subject'] = subject
 		Cdf.loc[i, 'Condition'] = condition
@@ -313,7 +313,7 @@ def get_AUC(Subjects, Conditions):
 		
 		aucdf.loc[i, 'Subject'] = subject
 		aucdf.loc[i, 'Condition'] = condition
-		for roi in ['FFA', 'PPA']:  #firdf['ROI'].unique()
+		for roi in ['FFA', 'PPA', 'V1']:  #firdf['ROI'].unique()
 			aucdf.loc[i,roi+'_AUC'] = np.trapz(firdf[(firdf['Condition']==condition) & (firdf['Subj']==subject) & (firdf['ROI']==roi)]['Beta'])
 	return aucdf
 		
@@ -339,6 +339,12 @@ def consolidate_EI_df(Subjects, TD_auc_df, TD_thacon_df, TD_MTD_df, behav_df):
 		
 		EI_df.loc[i, 'AUC_0bk'] = TD_auc_df[(TD_auc_df['Condition']=='Hp') &(TD_auc_df['Subject']==subject)]['PPA_AUC'].values + \
 								TD_auc_df[(TD_auc_df['Condition']=='Fp') &(TD_auc_df['Subject']==subject)]['FFA_AUC'].values
+
+		EI_df.loc[i, 'AUC_1bk_VC'] = TD_auc_df[(TD_auc_df['Condition']=='HF') &(TD_auc_df['Subject']==subject)]['V1_AUC'].values + \
+								TD_auc_df[(TD_auc_df['Condition']=='FH') &(TD_auc_df['Subject']==subject)]['V1_AUC'].values						
+
+		EI_df.loc[i, 'AUC_0bk_VC'] = TD_auc_df[(TD_auc_df['Condition']=='Hp') &(TD_auc_df['Subject']==subject)]['V1_AUC'].values + \
+								TD_auc_df[(TD_auc_df['Condition']=='Fp') &(TD_auc_df['Subject']==subject)]['V1_AUC'].values
 
 
 		EI_df.loc[i, 'MD_T'] = 	TD_thacon_df[(TD_thacon_df['Condition']=='FH') & (TD_thacon_df['Subject']==subject)]['FFA-MD'].values + \
@@ -370,8 +376,19 @@ def consolidate_EI_df(Subjects, TD_auc_df, TD_thacon_df, TD_MTD_df, behav_df):
 								TD_thacon_df[(TD_thacon_df['Condition']=='Fp') & (TD_thacon_df['Subject']==subject)]['FFA-MD'].values #- \
 								#TD_thacon_df[(TD_thacon_df['Condition']=='Hp') & (TD_thacon_df['Subject']==subject)]['PPA-Pu'].values - \
 								#TD_thacon_df[(TD_thacon_df['Condition']=='Fp') & (TD_thacon_df['Subject']==subject)]['FFA-Pu'].values						
-								
+		
 
+		EI_df.loc[i, 'VC_1bk_Pu'] = TD_thacon_df[(TD_thacon_df['Condition']=='HF') & (TD_thacon_df['Subject']==subject)]['VC-Pu'].values + \
+								TD_thacon_df[(TD_thacon_df['Condition']=='FH') & (TD_thacon_df['Subject']==subject)]['VC-Pu'].values
+		EI_df.loc[i, 'VC_1bk_MD'] = TD_thacon_df[(TD_thacon_df['Condition']=='HF') & (TD_thacon_df['Subject']==subject)]['VC-MD'].values + \
+								TD_thacon_df[(TD_thacon_df['Condition']=='FH') & (TD_thacon_df['Subject']==subject)]['VC-MD'].values						 #- \
+								#TD_thacon_df[(TD_thacon_df['Condition']=='Hp') & (TD_thacon_df['Subject']==subject)]['PPA-Pu'].values - \
+								#TD_thacon_df[(TD_thacon_df['Condition']=='Fp') & (TD_thacon_df['Subject']==subject)]['FFA-Pu'].values							
+		EI_df.loc[i, 'VC_0bk_Pu'] = TD_thacon_df[(TD_thacon_df['Condition']=='Hp') & (TD_thacon_df['Subject']==subject)]['PPA-Pu'].values + \
+								TD_thacon_df[(TD_thacon_df['Condition']=='Fp') & (TD_thacon_df['Subject']==subject)]['FFA-Pu'].values #- \
+		EI_df.loc[i, 'VC_0bk_MD'] = TD_thacon_df[(TD_thacon_df['Condition']=='Hp') & (TD_thacon_df['Subject']==subject)]['PPA-MD'].values + \
+								TD_thacon_df[(TD_thacon_df['Condition']=='Fp') & (TD_thacon_df['Subject']==subject)]['FFA-MD'].values
+														
 		EI_df.loc[i, 'MTD_T'] =	TD_MTD_df[(TD_MTD_df['Condition']=='FH') & (TD_MTD_df['Subject']==subject)]['FFA-VC'].values + \
 								TD_MTD_df[(TD_MTD_df['Condition']=='HF') & (TD_MTD_df['Subject']==subject)]['PPA-VC'].values
 
